@@ -1,0 +1,33 @@
+# One command: docker compose up --build   then open http://localhost:8080
+# First run downloads the Gemma model (about 3 GB for gemma3). Until it finishes, quests use the backup rules engine.
+# GPU users: see https://docs.docker.com/compose/how-tos/gpu-support/ and add a gpu reservation to the ollama service.
+services:
+  ollama:
+    image: ollama/ollama
+    volumes: ["ollama:/root/.ollama"]
+    healthcheck: { test: ["CMD", "ollama", "list"], interval: 10s, timeout: 5s, retries: 30 }
+
+  model-pull:
+    image: ollama/ollama
+    depends_on: { ollama: { condition: service_healthy } }
+    environment: { OLLAMA_HOST: "http://ollama:11434" }
+    entrypoint: ["ollama", "pull", "${GEMMA_MODEL:-gemma3}"]
+    restart: "no"
+
+  backend:
+    build: ./backend
+    environment:
+      OLLAMA_URL: http://ollama:11434/api/generate
+      GEMMA_MODEL: ${GEMMA_MODEL:-gemma3}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      DEV_MODE: ${DEV_MODE:-true}
+      DEMO_MODE: ${DEMO_MODE:-true}
+    volumes: ["data:/data"]
+    depends_on: { ollama: { condition: service_healthy } }
+
+  web:
+    build: { context: ./frontend, args: { VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}" } }
+    ports: ["8080:80"]
+    depends_on: [backend]
+
+volumes: { ollama: {}, data: {} }
